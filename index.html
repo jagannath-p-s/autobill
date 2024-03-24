@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+    <script type="text/javascript">
+        // Toggle debugging option
+        const DEBUG = true;
+
+        // the link to your model provided by Teachable Machine export panel
+        const URL = "https://teachablemachine.withgoogle.com/models/2OE0mdvyM/";
+
+        let model, webcam, labelContainer, maxPredictions;
+        let billItems = []; // Array to store bill items
+
+        // Load the image model and setup the webcam
+        async function init() {
+            try {
+                const modelURL = URL + "model.json";
+                const metadataURL = URL + "metadata.json";
+
+                if (DEBUG) console.log("Loading model...");
+                model = await tmImage.load(modelURL, metadataURL);
+                maxPredictions = model.getTotalClasses();
+
+                if (DEBUG) console.log("Setting up webcam...");
+                const flip = true; // whether to flip the webcam
+                webcam = new tmImage.Webcam(200, 200, flip); // width, height, flip
+                await webcam.setup(); // request access to the webcam
+                await webcam.play();
+                window.requestAnimationFrame(loop);
+
+                // append elements to the DOM
+                document.getElementById("webcam-container").appendChild(webcam.canvas);
+                labelContainer = document.getElementById("label-container");
+                for (let i = 0; i < maxPredictions; i++) { // and class labels
+                    labelContainer.appendChild(document.createElement("div"));
+                }
+            } catch (error) {
+                console.error("Error initializing:", error);
+            }
+        }
+
+        async function loop() {
+            webcam.update(); // update the webcam frame
+            await predict();
+            window.requestAnimationFrame(loop);
+        }
+
+        // Function to add item to bill
+        function addToBill(itemName, itemPrice) {
+            billItems.push({ itemName, itemPrice }); // Add item to the billItems array
+            generateBill(); // Generate bill after adding the item
+        }
+
+        // Function to generate and display bill
+        function generateBill() {
+            const billContainer = document.getElementById("bill-container");
+            billContainer.innerHTML = "<h2>Bill</h2>";
+            // Display each item in the bill
+            billItems.forEach(item => {
+                const itemElement = document.createElement("div");
+                itemElement.textContent = `${item.itemName}: $${item.itemPrice.toFixed(2)}`;
+                billContainer.appendChild(itemElement);
+            });
+        }
+
+        // run the webcam image through the image model
+        async function predict() {
+            // predict can take in an image, video, or canvas HTML element
+            const prediction = await model.predict(webcam.canvas);
+            for (let i = 0; i < maxPredictions; i++) {
+                const classPrediction =
+                    prediction[i].className + ": " + prediction[i].probability.toFixed(2);
+                labelContainer.childNodes[i].innerHTML = classPrediction;
+            }
+
+            // Check prediction for an item and add it to bill if probability is high enough
+            const threshold = 0.8;
+            const predictedItemIndex = prediction.findIndex(pred => pred.probability > threshold);
+            if (predictedItemIndex !== -1) {
+                const itemName = prediction[predictedItemIndex].className;
+                const itemPrice = /* Fetch price for item from database or predefined mapping */;
+                addToBill(itemName, itemPrice);
+            }
+        }
+    </script>
+</head>
+<body>
+    <div>Teachable Machine Image Model</div>
+    <button type="button" onclick="init()">Start</button>
+    <div id="webcam-container"></div>
+    <div id="label-container"></div>
+    <div id="bill-container"></div>
+</body>
+</html>
