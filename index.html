@@ -3,18 +3,64 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+    <title>Fruit Billing</title>
+    <!-- Load necessary scripts -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
-    <script type="text/javascript">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.3/jspdf.umd.min.js"></script>
+    <!-- Link to external stylesheet for styling -->
+    <style>
+        /* CSS for styling */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #webcam-container {
+            margin-top: 20px;
+        }
+        #label-container {
+            margin-top: 10px;
+        }
+        #bill-container {
+            margin-top: 20px;
+            border: 1px solid #ccc;
+            padding: 10px;
+            border-radius: 5px;
+            width: 300px;
+        }
+        #bill-container h2 {
+            margin-top: 0;
+        }
+        #bill-container div {
+            margin-bottom: 5px;
+        }
+        button[disabled] {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div>Autobill</div>
+    <button type="button" onclick="init()">Start</button>
+    <div id="webcam-container"></div>
+    <div id="label-container"></div>
+
+    <div id="bill-container"></div>
+
+    <script>
         // Toggle debugging option
         const DEBUG = true;
 
-        // the link to your model provided by Teachable Machine export panel
+        // The link to your model provided by the Teachable Machine export panel
         const URL = "https://teachablemachine.withgoogle.com/models/2OE0mdvyM/";
 
         let model, webcam, labelContainer, maxPredictions;
-        let billItems = []; // Array to store bill items
+        let billItems = [];
 
         // Load the image model and setup the webcam
         async function init() {
@@ -27,73 +73,115 @@
                 maxPredictions = model.getTotalClasses();
 
                 if (DEBUG) console.log("Setting up webcam...");
-                const flip = true; // whether to flip the webcam
-                webcam = new tmImage.Webcam(200, 200, flip); // width, height, flip
-                await webcam.setup(); // request access to the webcam
+                const flip = true; // Whether to flip the webcam
+                webcam = new tmImage.Webcam(200, 200, flip); // Width, height, flip
+                await webcam.setup(); // Request access to the webcam
                 await webcam.play();
-                window.requestAnimationFrame(loop);
+                loop(); // Start the loop immediately
 
-                // append elements to the DOM
-                document.getElementById("webcam-container").appendChild(webcam.canvas);
+                // Append elements to the DOM
+                const webcamContainer = document.getElementById("webcam-container");
+                webcamContainer.innerHTML = ""; // Clear previous content
+                webcamContainer.appendChild(webcam.canvas);
+
                 labelContainer = document.getElementById("label-container");
-                for (let i = 0; i < maxPredictions; i++) { // and class labels
+                for (let i = 0; i < maxPredictions; i++) { // And class labels
                     labelContainer.appendChild(document.createElement("div"));
                 }
             } catch (error) {
                 console.error("Error initializing:", error);
+                alert("Error initializing webcam. Please check console for details.");
             }
         }
 
         async function loop() {
-            webcam.update(); // update the webcam frame
+            webcam.update(); // Update the webcam frame
             await predict();
-            window.requestAnimationFrame(loop);
+            setTimeout(loop, 1000); // Adjust the delay (1000 ms = 1 second) for desired FPS
         }
 
         // Function to add item to bill
-        function addToBill(itemName, itemPrice) {
-            billItems.push({ itemName, itemPrice }); // Add item to the billItems array
-            generateBill(); // Generate bill after adding the item
+        function addToBill(itemName, itemPrice, itemWeight) {
+            billItems.push({ name: itemName, price: itemPrice, weight: itemWeight });
+            generateBill();
         }
 
         // Function to generate and display bill
         function generateBill() {
             const billContainer = document.getElementById("bill-container");
-            billContainer.innerHTML = "<h2>Bill</h2>";
-            // Display each item in the bill
+            let billHTML = "<h2>Bill</h2>";
+            let totalAmount = 0;
             billItems.forEach(item => {
-                const itemElement = document.createElement("div");
-                itemElement.textContent = `${item.itemName}: $${item.itemPrice.toFixed(2)}`;
-                billContainer.appendChild(itemElement);
+                const itemCost = item.price * item.weight;
+                totalAmount += itemCost;
+                billHTML += `<div>${item.name}: ₹${itemCost.toFixed(2)} (${item.weight.toFixed(2)} kg)</div>`;
             });
+            billHTML += `<div><strong>Total: ₹${totalAmount.toFixed(2)}</strong></div>`;
+            billContainer.innerHTML = billHTML;
         }
 
-        // run the webcam image through the image model
-        async function predict() {
-            // predict can take in an image, video, or canvas HTML element
-            const prediction = await model.predict(webcam.canvas);
-            for (let i = 0; i < maxPredictions; i++) {
-                const classPrediction =
-                    prediction[i].className + ": " + prediction[i].probability.toFixed(2);
-                labelContainer.childNodes[i].innerHTML = classPrediction;
-            }
+        // Function to generate and download a PDF bill
+        function downloadBill() {
+            const billContainer = document.getElementById("bill-container").innerHTML;
+            const billTitle = "Fruit Bill";
+            const pdf = new jsPDF();
+            pdf.text(billTitle, 10, 10);
+            pdf.fromHTML(billContainer, 15, 15);
+            pdf.save("bill.pdf");
+        }
 
-            // Check prediction for an item and add it to bill if probability is high enough
-            const threshold = 0.8;
-            const predictedItemIndex = prediction.findIndex(pred => pred.probability > threshold);
-            if (predictedItemIndex !== -1) {
-                const itemName = prediction[predictedItemIndex].className;
-                const itemPrice = /* Fetch price for item from database or predefined mapping */;
-                addToBill(itemName, itemPrice);
+        // Run the webcam image through the image model
+        async function predict() {
+            if (!model || !webcam) return; // Exit if model or webcam is not initialized
+            // Predict can take in an image, video, or canvas HTML element
+            const prediction = await model.predict(webcam.canvas);
+            const threshold = 0.85; // Adjust this threshold as needed
+            const predictedItem = prediction.find(pred => pred.probability > threshold);
+            if (predictedItem) {
+                const classPrediction = predictedItem.className + ": " + predictedItem.probability.toFixed(2);
+                labelContainer.innerHTML = classPrediction;
+
+                // If a fruit is detected with a probability above 0.85, alert the user to generate the bill
+                if (predictedItem.probability > threshold) {
+                    const itemName = predictedItem.className;
+                    const itemWeight = (Math.random() * (0.391 - 0.029) + 0.029).toFixed(2); // Generate random weight between 29 and 391 grams
+
+                    const itemPrice = '18.00'; // Example price (in INR)
+                    const shouldGenerateBill = window.confirm("Fruit detected with high probability!\n\nName: " + itemName + "\nWeight: " + itemWeight + " kg\nPrice per kg: ₹" + itemPrice + "\n\nDo you want to generate the bill?");
+
+                    if (shouldGenerateBill) {
+                        billNow(predictedItem); // Generate the bill for the detected fruit
+                    } else {
+                        labelContainer.innerHTML = ""; // Clear label container if the user cancels
+                    }
+                }
+            } else {
+                labelContainer.innerHTML = "";
+            }
+        }
+
+        // Function to bill the current item
+        function billNow(predictedItem) {
+            if (predictedItem) {
+                let itemName = predictedItem.className; // The className corresponds to the fruit name
+                let itemPrice = 0;
+                let itemWeight = 0;
+
+                // Define the price and weight for each fruit
+                if (itemName === "apple") {
+                    itemPrice = 100; // Price per kg for apple in INR
+                    itemWeight = itemWeight; // Assumed weight for apple in kg
+                } else if (itemName === "banana") {
+                    itemPrice = 60; // Price per kg for banana in INR
+                    itemWeight = 0.3; // Assumed weight for banana in kg
+                }
+                
+                // Add the detected item to the bill
+                addToBill(itemName, itemPrice, itemWeight);
+                generateBill(); // Generate the bill
+                downloadBill(); // Download the bill as PDF
             }
         }
     </script>
-</head>
-<body>
-    <div>Teachable Machine Image Model</div>
-    <button type="button" onclick="init()">Start</button>
-    <div id="webcam-container"></div>
-    <div id="label-container"></div>
-    <div id="bill-container"></div>
 </body>
 </html>
